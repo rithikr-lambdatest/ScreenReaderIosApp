@@ -54,18 +54,6 @@ private func stepScroll(_ holder: ScrollArrowHolder, by delta: CGFloat, step: CG
     scrollView.setContentOffset(CGPoint(x: 0, y: target), animated: true)
 }
 
-// Jump straight to the very bottom (or top) of the scroll content in one tap.
-private func jumpToEdge(_ holder: ScrollArrowHolder, toBottom: Bool) {
-    guard let scrollView = holder.scrollView else { return }
-    let minOffset = -scrollView.adjustedContentInset.top
-    let maxOffset = max(
-        minOffset,
-        scrollView.contentSize.height
-            + scrollView.adjustedContentInset.bottom
-            - scrollView.bounds.height
-    )
-    scrollView.setContentOffset(CGPoint(x: 0, y: toBottom ? maxOffset : minOffset), animated: true)
-}
 
 @ViewBuilder
 private func arrowButton(_ system: String, label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -87,8 +75,6 @@ private func arrowButton(_ system: String, label: String, id: String, action: @e
 struct ScrollArrowBar: View {
     @ObservedObject var holder: ScrollArrowHolder
     var step: CGFloat = 600
-    // When true, adds a "jump to bottom" button (single tap → very bottom).
-    var showJumpToBottom: Bool = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -98,11 +84,6 @@ struct ScrollArrowBar: View {
             }
             arrowButton("chevron.down", label: "Scroll down", id: "scroll_down_button") {
                 stepScroll(holder, by: 1, step: step)
-            }
-            if showJumpToBottom {
-                arrowButton("chevron.down.to.line", label: "Scroll to bottom", id: "scroll_to_bottom_button") {
-                    jumpToEdge(holder, toBottom: true)
-                }
             }
         }
         .padding(.horizontal, 16)

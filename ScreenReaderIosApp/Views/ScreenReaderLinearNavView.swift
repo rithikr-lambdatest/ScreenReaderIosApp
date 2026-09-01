@@ -86,7 +86,7 @@ struct ScreenReaderLinearNavView: View {
             .padding()
             .background(ScrollViewFinder(holder: scrollHolder))
         }
-        ScrollArrowBar(holder: scrollHolder, showJumpToBottom: true)
+        ScrollArrowBar(holder: scrollHolder)
         }
         .navigationTitle("")
     }
