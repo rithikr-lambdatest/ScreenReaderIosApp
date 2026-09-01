@@ -30,64 +30,32 @@ struct ScreenReaderTestView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
 
-                // ---------- R1: Screen Reader Focus Missing for Interactive Element ----------
-                // NEW LOGIC (2026-08-20, from dev): the rule no longer tests for an empty accessible
-                // name. It fires when an interactive element EXISTS in the view tree but is HIDDEN
-                // from VoiceOver — isAccessibilityElement = false on the element, or
-                // accessibilityElementsHidden = true on a parent. ios-device-agent sees it during
-                // the tree walk and routes it to skippedInteractive (not traversalOrder); the rule
-                // fires from that list. The old empty-name cases are obsolete (archived in the QA
-                // test plan §1a) — an unlabelled-but-reachable control is no longer an R1 case.
-                // Violations use real UIKit views so the constructions match the dev's reference
-                // APIs exactly; V-02 covers the SwiftUI equivalent (.accessibilityHidden(true)).
+                // ---------- R1/R2: Screen Reader Focus Missing ----------
+                // ACTUAL agent logic (from dev, 2026-09-01): an element enters traversalOrder
+                // when (isLeaf || label != "" || identifier != "") && hasValidFrame. It lands in
+                // skippedInteractive / skippedNonInteractive — and R1/R2 fire — ONLY when it has
+                // interactive traits (button/link/switch) or content traits (staticText/image/
+                // header) but NO label, NO identifier and HAS CHILDREN (non-leaf).
+                // Hiding (isAccessibilityElement=false / accessibilityElementsHidden) is NOT part
+                // of the check — all previous hidden-element fixtures were unfirable.
+                // Consequence: the violating element itself must carry NO accessibilityIdentifier;
+                // ids for automation live on its CHILD views (children are separate elements and
+                // do not affect the parent's isAccessible check).
                 section("R1 — Focus Missing: Interactive (2.4.3, critical)",
-                        "Interactive element exists and is tappable, but VoiceOver can never reach it: isAccessibilityElement = false, or a parent with accessibilityElementsHidden = true. Reported from skippedInteractive.")
-                // ALL UIKit R1+R2 violations live in ONE plain UIKit subtree below, with
-                // accessibilityIdentifiers set on the UIKit views THEMSELVES. Deliberately no
-                // card()/.accessibilityIdentifier wrappers: a SwiftUI identifier modifier
-                // creates a visible AX element around the hidden view, which can mask the
-                // hidden element from the device-agent walker.
-                section("UIKit hidden-elements block (R1 V-01, V-03 / R2 V-01, V-03, V-04)",
-                        "Hidden Button · hidden container (Buy Now + label) · hidden labeled image · hidden shipping label — every one present, functional and skipped by VoiceOver.")
-                HiddenFixturesUIKitBlock()
-                    .frame(height: 240)
+                        "Container with .button / .link trait, empty label, no identifier, with children — a custom control built without an accessible name. Reported from skippedInteractive.")
+                section("R2 — Focus Missing: Non-Interactive (2.4.3, serious)",
+                        "Container with .image / .header trait, empty label, no identifier, with children. Reported from skippedNonInteractive. All four violations live in the UIKit block below; locate them in the report by trait + bounds.")
+                FocusMissingFixturesBlock()
+                    .frame(height: 320)
 
-                card("R1 V-02: SwiftUI Button, .accessibilityHidden(true)",
-                     "SwiftUI-flavor probe. NOTE: SwiftUI removes hidden elements from the AX tree entirely, so the walker may never see this one — if only the UIKit block fires, that is the reason", "sr_r1_v02_hidden_swiftui_button") {
-                    Button("Checkout now") {}
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityHidden(true)
-                }
                 card("R1 P-01: reachable Button (pass)",
-                     "Ordinary button, in traversalOrder", "sr_r1_p01_reachable_button") {
+                     "Leaf with a label — in traversalOrder", "sr_r1_p01_reachable_button") {
                     Button("Add to Cart") {}
                         .buttonStyle(.borderedProminent)
-                }
-                card("R1 P-02: reachable text field (pass)",
-                     "Named input, reachable", "sr_r1_p02_textfield_labeled") {
-                    TextField("", text: .constant(""))
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Email address")
-                }
-
-                // ---------- R2: Screen Reader Focus Missing for Non-Interactive Element ----------
-                // Same new logic for content elements: image/text hidden from VoiceOver while
-                // present on screen → skippedNonInteractive → rule fires.
-                section("R2 — Focus Missing: Non-Interactive (2.4.3, serious)",
-                        "Content element (image / text) hidden from VoiceOver the same two ways. Reported from skippedNonInteractive.")
-                card("R2 V-02: SwiftUI Text, .accessibilityHidden(true)",
-                     "SwiftUI-flavor probe — same caveat as R1 V-02: may be absent from the AX tree rather than skipped", "sr_r2_v02_hidden_text") {
-                    Text("Limited stock — 3 left")
-                        .accessibilityHidden(true)
                 }
                 card("R2 P-01: reachable text (pass)",
                      "Normal announced text", "sr_r2_p01_labeled_text") {
                     Text("Section divider")
-                }
-                card("R2 P-02: reachable described image (pass)",
-                     "Described and reachable", "sr_r2_p02_reachable_image") {
-                    Image("wooden_dice").resizable().scaledToFit().frame(height: 44)
-                        .accessibilityLabel("Wooden dice")
                 }
 
                 // ---------- R4: Meaningless Spoken Output ----------
@@ -303,57 +271,70 @@ struct HiddenUIButton: UIViewRepresentable {
     func updateUIView(_ uiView: UIButton, context: Context) {}
 }
 
-/// All UIKit R1/R2 violations in one plain UIKit subtree, matching the dev's
-/// reference snippets exactly. Identifiers are set on the UIKit views themselves;
-/// no SwiftUI accessibility modifiers sit above them.
-private struct HiddenFixturesUIKitBlock: UIViewRepresentable {
+/// R1/R2 violations matching the device-agent's ACTUAL skip logic (see the section
+/// comment above): each violating element is an unlabeled, identifier-less CONTAINER
+/// carrying accessibility traits, with child views inside. Child views get labels and
+/// identifiers so they stay ordinary reachable elements and only the parent violates.
+private struct FocusMissingFixturesBlock: UIViewRepresentable {
+
+    private func traitContainer(_ traits: UIAccessibilityTraits, tint: UIColor,
+                                children: [UIView]) -> UIStackView {
+        let container = UIStackView(arrangedSubviews: children)
+        container.axis = .horizontal
+        container.spacing = 8
+        container.alignment = .center
+        container.isLayoutMarginsRelativeArrangement = true
+        container.layoutMargins = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        container.backgroundColor = tint.withAlphaComponent(0.15)
+        container.layer.cornerRadius = 8
+        container.accessibilityTraits = traits  // trait, but NO label and NO identifier
+        return container
+    }
+
+    private func childLabel(_ text: String, id: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.accessibilityIdentifier = id
+        return label
+    }
+
     func makeUIView(context: Context) -> UIStackView {
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 10
+        stack.spacing = 12
         stack.alignment = .leading
 
-        // R1 V-01: fully functional button VoiceOver skips.
-        let hiddenButton = UIButton(type: .system)
-        hiddenButton.setTitle("Hidden Button", for: .normal)
-        hiddenButton.accessibilityIdentifier = "sr_r1_v01_hidden_uibutton"
-        hiddenButton.isAccessibilityElement = false  // VoiceOver skips it
-        stack.addArrangedSubview(hiddenButton)
+        // R1 V-01: custom "button" — .button trait, no label/identifier, children inside.
+        let icon = UIImageView(image: UIImage(named: "wooden_dice"))
+        icon.accessibilityLabel = "Dice icon"
+        icon.accessibilityIdentifier = "sr_r1_v01_child_icon"
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        stack.addArrangedSubview(traitContainer(.button, tint: .systemBlue, children: [
+            icon, childLabel("Buy now", id: "sr_r1_v01_child_label"),
+        ]))
 
-        // R1 V-03 (button) + R2 V-04 (label): parent hides ALL children.
-        let container = UIStackView()
-        container.axis = .vertical
-        container.spacing = 4
-        container.accessibilityIdentifier = "sr_r1_v03_hidden_container"
-        let containerButton = UIButton(type: .system)
-        containerButton.setTitle("Buy Now", for: .normal)
-        containerButton.accessibilityIdentifier = "sr_r1_v03_container_button"
-        let containerLabel = UILabel()
-        containerLabel.text = "Limited time offer"
-        containerLabel.font = .preferredFont(forTextStyle: .footnote)
-        containerLabel.accessibilityIdentifier = "sr_r2_v04_container_label"
-        container.addArrangedSubview(containerButton)
-        container.addArrangedSubview(containerLabel)
-        container.accessibilityElementsHidden = true  // all children hidden
-        stack.addArrangedSubview(container)
+        // R1 V-02: custom "link" — .link trait, no label/identifier, children inside.
+        stack.addArrangedSubview(traitContainer(.link, tint: .systemIndigo, children: [
+            childLabel("View details", id: "sr_r1_v02_child_label"),
+        ]))
 
-        // R2 V-01: image WITH an accessibilityLabel that VoiceOver skips.
-        let hiddenImage = UIImageView(image: UIImage(named: "wooden_dice"))
-        hiddenImage.contentMode = .scaleAspectFit
-        hiddenImage.accessibilityLabel = "Product image"
-        hiddenImage.accessibilityIdentifier = "sr_r2_v01_hidden_uiimage"
-        hiddenImage.isAccessibilityElement = false  // VoiceOver skips it
-        hiddenImage.translatesAutoresizingMaskIntoConstraints = false
-        hiddenImage.heightAnchor.constraint(equalToConstant: 56).isActive = true
-        hiddenImage.widthAnchor.constraint(equalToConstant: 56).isActive = true
-        stack.addArrangedSubview(hiddenImage)
+        // R2 V-01: "image" container — .image trait, no label/identifier, children inside.
+        let swatchA = UIImageView(image: UIImage(named: "nike"))
+        swatchA.accessibilityLabel = "Nike swoosh"
+        swatchA.accessibilityIdentifier = "sr_r2_v01_child_image"
+        swatchA.translatesAutoresizingMaskIntoConstraints = false
+        swatchA.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        swatchA.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        stack.addArrangedSubview(traitContainer(.image, tint: .systemGreen, children: [
+            swatchA, childLabel("Product shot", id: "sr_r2_v01_child_caption"),
+        ]))
 
-        // R2 V-03: informative text VoiceOver skips.
-        let hiddenLabel = UILabel()
-        hiddenLabel.text = "Free shipping on orders over $50"
-        hiddenLabel.accessibilityIdentifier = "sr_r2_v03_hidden_uilabel"
-        hiddenLabel.isAccessibilityElement = false  // VoiceOver skips it
-        stack.addArrangedSubview(hiddenLabel)
+        // R2 V-02: "header" container — .header trait, no label/identifier, children inside.
+        stack.addArrangedSubview(traitContainer(.header, tint: .systemOrange, children: [
+            childLabel("Todays deals", id: "sr_r2_v02_child_label"),
+        ]))
 
         return stack
     }

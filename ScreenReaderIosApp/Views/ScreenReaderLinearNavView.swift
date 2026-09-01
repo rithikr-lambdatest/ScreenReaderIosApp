@@ -19,13 +19,14 @@ struct ScreenReaderLinearNavView: View {
                 // Top-of-page violation (visible without scrolling)
                 // NEW R1 logic: hidden-but-tappable interactive element, on screen from the
                 // start — must land in skippedInteractive in BOTH modes.
-                // UIKit construction with the identifier on the UIButton itself — a SwiftUI
-                // .accessibilityIdentifier wrapper would mask the hidden element from the walker.
+                // R1 per the ACTUAL agent logic: unlabeled, identifier-less container with a
+                // .button trait and children. No identifier on the violating element itself —
+                // locate it in the report by trait + bounds (child carries the id).
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("TOP: hidden Button (R1) — visible without scrolling")
+                    Text("TOP: unlabeled .button-trait container (R1) — visible without scrolling")
                         .font(.caption).fontWeight(.semibold)
-                    HiddenUIButton(title: "Flash Sale", identifier: "sr_lin_top_r1")
-                        .frame(height: 44)
+                    TraitContainerButton()
+                        .frame(height: 48)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -236,4 +237,22 @@ struct PHashAnimatedView: View {
 
 #Preview {
     NavigationView { ScreenReaderLinearNavView() }
+}
+
+// Unlabeled .button-trait container with a child label — fires R1 under the agent's
+// (isLeaf || label || identifier) traversal rule.
+struct TraitContainerButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIStackView {
+        let child = UILabel()
+        child.text = "Flash Sale"
+        child.accessibilityIdentifier = "sr_lin_top_r1_child"
+        let container = UIStackView(arrangedSubviews: [child])
+        container.isLayoutMarginsRelativeArrangement = true
+        container.layoutMargins = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        container.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15)
+        container.layer.cornerRadius = 8
+        container.accessibilityTraits = .button  // trait, but NO label and NO identifier
+        return container
+    }
+    func updateUIView(_ uiView: UIStackView, context: Context) {}
 }
