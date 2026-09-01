@@ -19,12 +19,18 @@ struct ScreenReaderLinearNavView: View {
                 // Top-of-page violation (visible without scrolling)
                 // NEW R1 logic: hidden-but-tappable interactive element, on screen from the
                 // start — must land in skippedInteractive in BOTH modes.
-                labeledRow("TOP: hidden Button (R1) — visible without scrolling",
-                           "sr_lin_top_r1") {
-                    Button("Flash Sale") {}
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityHidden(true)
+                // UIKit construction with the identifier on the UIButton itself — a SwiftUI
+                // .accessibilityIdentifier wrapper would mask the hidden element from the walker.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("TOP: hidden Button (R1) — visible without scrolling")
+                        .font(.caption).fontWeight(.semibold)
+                    HiddenUIButton(title: "Flash Sale", identifier: "sr_lin_top_r1")
+                        .frame(height: 44)
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(8)
 
                 // Horizontal carousel — linear mode must swipe left through it
                 Text("Horizontal carousel (swipe →)").font(.headline).padding(.top, 8)
